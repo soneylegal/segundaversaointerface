@@ -9,7 +9,7 @@ function open_connection_and_create_db(callback) {
   const connection = mysql.createConnection({
     host: "localhost",
     user: "root",
-    password: "2207",
+    password: "root",
     database: "dbprojeto",
   });
 
@@ -20,7 +20,7 @@ function open_connection_and_create_db(callback) {
     }
     console.log("Conectado ao MySQL. ID: " + connection.threadId);
 
-    const sql_create_db = `CREATE DATABASE IF NOT EXISTS test`;
+    const sql_create_db = `CREATE DATABASE IF NOT EXISTS dbprojeto`;
 
     connection.query(sql_create_db, function (err) {
       if (err) {
@@ -28,15 +28,15 @@ function open_connection_and_create_db(callback) {
         return;
       }
 
-      console.log("Banco de dados 'test' criado/verificado.");
+      console.log("Banco de dados 'dbprojeto' criado/verificado.");
 
-      connection.changeUser({ database: "test" }, function (err) {
+      connection.changeUser({ database: "dbprojeto" }, function (err) {
         if (err) {
           console.error("Erro ao mudar para o banco: " + err);
           return;
         }
 
-        console.log("Conectado ao banco 'test'");
+        console.log("Conectado ao banco 'dbprojeto'");
         callback(connection);
       });
     });
@@ -714,6 +714,7 @@ function inserirDb() {
     inserir_hab12(conexao);
     inserir_hab13(conexao);
     inserir_personagem0(conexao);
+    inserir_personagem1(conexao);
     inserir_personagem2(conexao);
     inserir_personagem3(conexao);
     inserir_personagem4(conexao);
@@ -774,32 +775,32 @@ function inserirDb() {
   console.log("==== FIM ====");
 }
 
-function inserir_personagem1_atirador(con, nome) {
+function inserir_personagem1(con) {
   console.log("Inserindo personagem 1...");
   const sql = `INSERT INTO personagem (id_personagem, nome, vida, dinheiro, ocupacao, armadura, velocidade, reputacao, personagem_tipo, fk_id_item, fk_id_habilidade1, fk_id_habilidade2 )
-                VALUES (1, '${nome}', 120, 50, 'atirador', 5, 10, 10, 'jogador', 1, 8, 9);`;
+                VALUES (1, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'jogador', NULL, NULL, NULL);`;
   con.query(sql, callback_erro);
 }
 
-function inserir_personagem1_cabraPexte(con, nome) {
-  console.log("Inserindo personagem 1...");
-  const sql = `INSERT INTO personagem (id_personagem, nome, vida, dinheiro, ocupacao, armadura, velocidade, reputacao, personagem_tipo, fk_id_item, fk_id_habilidade1, fk_id_habilidade2 )
-                VALUES (1, ${nome}, 160, 50, 'cabra da pexte"', 10, 4, 10, 'jogador', 1, 10, 11);`;
-  con.query(sql, callback_erro);
-}
+// function inserir_personagem1_cabraPexte(con, nome) {
+//   console.log("Inserindo personagem 1...");
+//   const sql = `INSERT INTO personagem (id_personagem, nome, vida, dinheiro, ocupacao, armadura, velocidade, reputacao, personagem_tipo, fk_id_item, fk_id_habilidade1, fk_id_habilidade2 )
+//                 VALUES (1, ${nome}, 160, 50, 'cabra da pexte"', 10, 4, 10, 'jogador', 1, 10, 11);`;
+//   con.query(sql, callback_erro);
+// }
 
-function inserir_personagem1_espiritualista(con, nome) {
-  console.log("Inserindo personagem 1...");
-  const sql = `INSERT INTO personagem (id_personagem, nome, vida, dinheiro, ocupacao, armadura, velocidade, reputacao, personagem_tipo, fk_id_item, fk_id_habilidade1, fk_id_habilidade2 )
-                VALUES (1, ${nome}, 160, 50, 'espiritualista', 7, 7, 10, 'jogador', 1, 12, 13);`;
-  con.query(sql, callback_erro);
-}
+// function inserir_personagem1_espiritualista(con, nome) {
+//   console.log("Inserindo personagem 1...");
+//   const sql = `INSERT INTO personagem (id_personagem, nome, vida, dinheiro, ocupacao, armadura, velocidade, reputacao, personagem_tipo, fk_id_item, fk_id_habilidade1, fk_id_habilidade2 )
+//                 VALUES (1, ${nome}, 160, 50, 'espiritualista', 7, 7, 10, 'jogador', 1, 12, 13);`;
+//   con.query(sql, callback_erro);
+// }
 
 module.exports = {
   inserirDb,
-  inserir_personagem1_atirador,
-  inserir_personagem1_cabraPexte,
-  inserir_personagem1_espiritualista,
+  inserir_personagem1,
+  // inserir_personagem1_cabraPexte,
+  // inserir_personagem1_espiritualista,
   callback_erro,
   close,
 };

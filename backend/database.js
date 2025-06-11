@@ -1,4 +1,4 @@
-backend/database.js
+// backend/database.js
 
 "use strict";
 
@@ -16,16 +16,16 @@ class Database {
       this.connection = await mysql.createConnection({
         host: "localhost",
         user: "root",
-        password: "2207", 
+        password: "root", 
         database: "dbprojeto", 
       });
       console.log("Conectado ao MySQL. ID: " + this.connection.threadId);
 
       
-      await this.connection.query(`CREATE DATABASE IF NOT EXISTS test`);
-      console.log("Banco de dados 'test' criado/verificado.");
-      await this.connection.changeUser({ database: "test" });
-      console.log("Conectado ao banco 'test'");
+      await this.connection.query(`CREATE DATABASE IF NOT EXISTS dbprojeto`);
+      console.log("Banco de dados 'dbprojeto' criado/verificado.");
+      await this.connection.changeUser({ database: "dbprojeto" });
+      console.log("Conectado ao banco 'dbprojeto'");
 
       
       await this._createTables(); 
@@ -82,7 +82,7 @@ class Database {
         fala: "Prepare-se para o seu primeiro combate!",
       },
       
-      { id_dialogo: 4, nome: "Narrador", fala: "Você chegou na Fazenda1." },
+      { id_dialogo: 4, nome: "Narrador", fala: "Você chegou na Fazenda!." },
       {
         id_dialogo: 5,
         nome: "Coronel",
@@ -93,7 +93,7 @@ class Database {
 
     for (const d of dialogosData) {
       await this.connection.query(
-        `INSERT IGNORE INTO dialogos (id_dialogo, nome, fala) VALUES (?, ?, ?)`,
+        `INSERT IGNORE INTO dialogo (id_dialogo, nome, fala) VALUES (?, ?, ?)`,
         [d.id_dialogo, d.nome, d.fala]
       );
     }
@@ -103,7 +103,7 @@ class Database {
   async getDialogosFromDb() {
     try {
       const [rows] = await this.connection.query(
-        "SELECT * FROM dialogos ORDER BY id_dialogo"
+        "SELECT * FROM dialogo ORDER BY id_dialogo"
       );
       return rows;
     } catch (error) {

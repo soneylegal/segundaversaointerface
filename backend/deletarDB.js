@@ -8,8 +8,8 @@ function delete_database() {
   const con = mysql.createConnection({
     host: "localhost",
     user: "root",
-    password: "2207",
-    database: "test",
+    password: "root",
+    database: "dbprojeto",
   });
 
   con.connect(function (err) {
@@ -20,7 +20,7 @@ function delete_database() {
 
     console.log("Conectado ao MySQL.");
 
-    const sql = "DROP DATABASE IF EXISTS test";
+    const sql = "DROP DATABASE IF EXISTS dbprojeto";
 
     con.query(sql, function (err, results) {
       if (err) {
