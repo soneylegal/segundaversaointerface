@@ -1,808 +1,396 @@
+// backend/db.js (O NOVO ARQUIVO CONSOLIDADO)
+
 "use strict";
 
-const mysql = require("mysql2");
-// const { data_para_str, imprime_contato } = require('./util');
+const mysql = require("mysql2/promise"); // Usar a versão com Promise
 
-function open_connection_and_create_db(callback) {
-  console.log("Conectando...");
+class Database {
+  constructor() {
+    this.connection = null;
+  }
 
-  const connection = mysql.createConnection({
-    host: "localhost",
-    user: "root",
-    password: "root",
-    database: "dbprojeto",
-  });
-
-  connection.connect(function (err) {
-    if (err) {
-      console.error("Erro na conexão: " + err.stack);
-      return;
-    }
-    console.log("Conectado ao MySQL. ID: " + connection.threadId);
-
-    const sql_create_db = `CREATE DATABASE IF NOT EXISTS dbprojeto`;
-
-    connection.query(sql_create_db, function (err) {
-      if (err) {
-        console.error("Erro ao criar banco: " + err);
-        return;
-      }
-
-      console.log("Banco de dados 'dbprojeto' criado/verificado.");
-
-      connection.changeUser({ database: "dbprojeto" }, function (err) {
-        if (err) {
-          console.error("Erro ao mudar para o banco: " + err);
-          return;
-        }
-
-        console.log("Conectado ao banco 'dbprojeto'");
-        callback(connection);
+  async connect() {
+    console.log("Conectando ao MySQL...");
+    try {
+      this.connection = await mysql.createConnection({
+        host: "localhost",
+        user: "root",
+        password: "12345678",
+        database: "dbprojeto", // O banco de dados a ser usado
       });
-    });
-  });
-}
+      console.log("Conectado ao MySQL. ID: " + this.connection.threadId);
 
-function callback_erro(err, results, fields) {
-  if (err) {
-    console.error("Erro: " + err);
-    return;
+      // Garante que o banco de dados 'dbprojeto' exista
+      await this.connection.query(`CREATE DATABASE IF NOT EXISTS dbprojeto`);
+      console.log("Banco de dados 'dbprojeto' criado/verificado.");
+      // Muda para o banco de dados 'dbprojeto'
+      await this.connection.changeUser({ database: "dbprojeto" });
+      console.log("Conectado ao banco 'dbprojeto'");
+
+      // Chama os métodos para criar tabelas e inserir dados iniciais
+      await this._createTables();
+      await this._insertInitialFixedData();
+
+      console.log(
+        "Estrutura do banco de dados e dados iniciais verificados/inseridos."
+      );
+    } catch (err) {
+      console.error("Erro ao conectar ou inicializar o banco de dados:", err);
+      // É importante propagar o erro para quem chamou connect()
+      throw err;
+    }
+  }
+
+  // Método para criar todas as tabelas na ordem correta (FKs)
+  async _createTables() {
+    console.log("Criando/verificando tabelas...");
+
+    // Ordem de criação das tabelas (tabelas pai primeiro, depois as que dependem)
+    const createTableQueries = [
+      `
+      CREATE TABLE IF NOT EXISTS itens (
+        id_item INT NOT NULL PRIMARY KEY,
+        item VARCHAR(255)
+      );
+      `,
+      `
+      CREATE TABLE IF NOT EXISTS habilidade (
+        id_habilidade INT NOT NULL PRIMARY KEY,
+        dano INT,
+        falha INT,
+        nome_hab VARCHAR(255)
+      );
+      `,
+      // A tabela 'personagem' tem FKs para 'itens' e 'habilidade'
+      `
+      CREATE TABLE IF NOT EXISTS personagem (
+        id_personagem INT NOT NULL PRIMARY KEY,
+        nome VARCHAR(255),
+        vida INT,
+        dinheiro INT,
+        ocupacao VARCHAR(255),
+        armadura INT,
+        velocidade INT,
+        reputacao INT,
+        personagem_tipo VARCHAR(255),
+        fk_id_item INT,
+        fk_id_habilidade1 INT,
+        fk_id_habilidade2 INT,
+        FOREIGN KEY (fk_id_item) REFERENCES itens(id_item),
+        FOREIGN KEY (fk_id_habilidade1) REFERENCES habilidade(id_habilidade),
+        FOREIGN KEY (fk_id_habilidade2) REFERENCES habilidade(id_habilidade)
+      );
+      `,
+      `
+      CREATE TABLE IF NOT EXISTS cenas (
+        id_cenas INT NOT NULL PRIMARY KEY,
+        descricao VARCHAR(255),
+        ganho INT,
+        nome_cena VARCHAR(255)
+      );
+      `,
+      // A tabela 'mapa_fases' tem FK para 'cenas'
+      `
+      CREATE TABLE IF NOT EXISTS mapa_fases(
+        id_local INT NOT NULL PRIMARY KEY,
+        nome_mapa VARCHAR(255),
+        status VARCHAR(255),
+        fk_id_cenas INT,
+        descricao VARCHAR(255),
+        FOREIGN KEY (fk_id_cenas) REFERENCES cenas(id_cenas)
+      );
+      `,
+      // A tabela 'dialogo' tem FK para 'personagem'
+      `
+      CREATE TABLE IF NOT EXISTS dialogo (
+        id_dialogo INT NOT NULL PRIMARY KEY,
+        fk_id_personagem INT,
+        nome VARCHAR(255), -- Adicionado 'nome' aqui para consistência com o outro db.js que vi, mas o fk_id_personagem já indica o nome do personagem
+        fala TEXT,
+        FOREIGN KEY (fk_id_personagem) REFERENCES personagem(id_personagem)
+      );
+      `,
+      // A tabela 'dialogo_mapa_fases' tem FKs para 'mapa_fases' e 'dialogo'
+      `
+      CREATE TABLE IF NOT EXISTS dialogo_mapa_fases (
+        fk_id_local INT,
+        fk_id_dialogo INT,
+        FOREIGN KEY (fk_id_local) REFERENCES mapa_fases(id_local),
+        FOREIGN KEY (fk_id_dialogo) REFERENCES dialogo(id_dialogo),
+        PRIMARY KEY(fk_id_local, fk_id_dialogo)
+      );
+      `,
+    ];
+
+    for (const sql of createTableQueries) {
+      await this.connection.query(sql);
+    }
+    console.log("Todas as tabelas verificadas/criadas.");
+  }
+
+  // Método para inserir todos os dados fixos
+  async _insertInitialFixedData() {
+    console.log("Inserindo/verificando dados fixos...");
+
+    // Ordem de inserção (tabelas pai primeiro)
+    const insertQueries = [
+      // Itens
+      `INSERT IGNORE INTO itens (id_item, item) VALUES (1, 'cantil');`,
+      // Habilidades
+      `INSERT IGNORE INTO habilidade (id_habilidade, dano, falha, nome_hab) VALUES (1, 7, 2, 'pistola');`,
+      `INSERT IGNORE INTO habilidade (id_habilidade, dano, falha, nome_hab) VALUES (2, 12, 5, 'tiro duplo de escopeta');`,
+      `INSERT IGNORE INTO habilidade (id_habilidade, dano, falha, nome_hab) VALUES (3, 10, 7, 'FACA');`,
+      `INSERT IGNORE INTO habilidade (id_habilidade, dano, falha, nome_hab) VALUES (4, 10, 8, 'CHUTE');`,
+      `INSERT IGNORE INTO habilidade (id_habilidade, dano, falha, nome_hab) VALUES (5, 10, 5, 'DISPARO');`,
+      `INSERT IGNORE INTO habilidade (id_habilidade, dano, falha, nome_hab) VALUES (6, 15, 7, 'ESCOPETA');`,
+      `INSERT IGNORE INTO habilidade (id_habilidade, dano, falha, nome_hab) VALUES (7, 14, 8, 'FACAO');`,
+      `INSERT IGNORE INTO habilidade (id_habilidade, dano, falha, nome_hab) VALUES (8, 20, 2, 'PISTOLA 20M');`,
+      `INSERT IGNORE INTO habilidade (id_habilidade, dano, falha, nome_hab) VALUES (9, 30, 2, 'ESPINGARDA');`,
+      `INSERT IGNORE INTO habilidade (id_habilidade, dano, falha, nome_hab) VALUES (10, 25, 2, 'SOCO');`,
+      `INSERT IGNORE INTO habilidade (id_habilidade, dano, falha, nome_hab) VALUES (11, 30, 4, 'PEIXERA');`,
+      `INSERT IGNORE INTO habilidade (id_habilidade, dano, falha, nome_hab) VALUES (12, 60, 7, 'me de padin ciço');`,
+      `INSERT IGNORE INTO habilidade (id_habilidade, dano, falha, nome_hab) VALUES (13, 40, 4, 'PENITENCIA');`,
+
+      // Cenas
+      `INSERT IGNORE INTO cenas (id_cenas, descricao, ganho, nome_cena) VALUES (1, NULL, NULL, 'Começo do jogo');`,
+      `INSERT IGNORE INTO cenas (id_cenas, descricao, ganho, nome_cena) VALUES (2, NULL, NULL, 'TUTORIAL');`,
+      `INSERT IGNORE INTO cenas (id_cenas, descricao, ganho, nome_cena) VALUES (3, 'Tutorial concluído. Ganho de: 50 cruzados novos', 50, 'FASE 1 - A JÓIA ROUBADA');`,
+      `INSERT IGNORE INTO cenas (id_cenas, descricao, ganho, nome_cena) VALUES (4, 'Missão da joia concluída. Ganho de 75 cruzados novos', 75, 'FASE 2 - A VOLANTE');`,
+      `INSERT IGNORE INTO cenas (id_cenas, descricao, ganho, nome_cena) VALUES (5, 'Missão da . Ganho de: Mil cruzados novos', 1000, 'FASE 3 - CIDADE DO SERTÃO');`,
+      `INSERT IGNORE INTO cenas (id_cenas, descricao, ganho, nome_cena) VALUES (6, 'Missão da . Ganho de: Mil cruzados novo', 9999, 'FASE 4 - FAZENDA DO CORONEL ZÉ RUFINO');`,
+      `INSERT IGNORE INTO cenas (id_cenas, descricao, ganho, nome_cena) VALUES (7, 'Jogo zerado. Você recebeu o título de Rei do Cangaço', 99999999, 'FIM DE JOGO');`,
+      `INSERT IGNORE INTO cenas (id_cenas, descricao, ganho, nome_cena) VALUES (8, 'Game over. Você não conseguiu vencer o coronel Zé Rufino, perdeu tudo e virou lembrança no sertão.', 0, 'FIM DE JOGO');`,
+
+      // Personagens (NPCs e o slot do jogador inicial)
+      // Nota: O personagem 1 será inicializado/atualizado pelo /login ou rotas específicas do jogador.
+      `INSERT IGNORE INTO personagem (id_personagem, nome, vida, dinheiro, ocupacao, armadura, velocidade, reputacao, personagem_tipo, fk_id_item, fk_id_habilidade1, fk_id_habilidade2 ) VALUES (0, 'NARRADOR', NULL, NULL, 'NARRADOR', NULL, NULL, NULL, 'NPC', NULL,NULL,NULL);`,
+      `INSERT IGNORE INTO personagem (id_personagem, nome, vida, dinheiro, ocupacao, armadura, velocidade, reputacao, personagem_tipo, fk_id_item, fk_id_habilidade1, fk_id_habilidade2 ) VALUES (1, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'jogador', NULL, NULL, NULL);`, // Slot inicial do jogador
+      `INSERT IGNORE INTO personagem (id_personagem, nome, vida, dinheiro, ocupacao, armadura, velocidade, reputacao, personagem_tipo, fk_id_item, fk_id_habilidade1, fk_id_habilidade2 ) VALUES (2, 'Lampião', 80, 500, 'Líder do cangaço', 2, 4, 100, 'NPC', NULL , 1, 2);`,
+      `INSERT IGNORE INTO personagem (id_personagem, nome, vida, dinheiro, ocupacao, armadura, velocidade, reputacao, personagem_tipo, fk_id_item, fk_id_habilidade1, fk_id_habilidade2 ) VALUES (3, 'Maria Rendeira', NULL, NULL, 'dona de casa', NULL, NULL, NULL, 'NPC', NULL,NULL,NULL);`,
+      `INSERT IGNORE INTO personagem (id_personagem, nome, vida, dinheiro, ocupacao, armadura, velocidade, reputacao, personagem_tipo, fk_id_item, fk_id_habilidade1, fk_id_habilidade2 ) VALUES (4, 'Coronel Francisco de Texeira', 60, 50, 'Coronel da fazenda de gados', 4, 10, 10, 'NPC', NULL, 3, 4);`,
+      `INSERT IGNORE INTO personagem (id_personagem, nome, vida, dinheiro, ocupacao, armadura, velocidade, reputacao, personagem_tipo, fk_id_item, fk_id_habilidade1, fk_id_habilidade2 ) VALUES (5, 'Volante', 50, 50, 'Policiais do sertão', 4, 7, 1, 'NPC', NULL, 3, 1);`,
+      `INSERT IGNORE INTO personagem (id_personagem, nome, vida, dinheiro, ocupacao, armadura, velocidade, reputacao, personagem_tipo, fk_id_item, fk_id_habilidade1, fk_id_habilidade2 ) VALUES (6, 'Bandidos da Cidade', 30, 50, 'Invasores', 2, 10, 1, 'NPC', NULL, 5, 4);`,
+      `INSERT IGNORE INTO personagem (id_personagem, nome, vida, dinheiro, ocupacao, armadura, velocidade, reputacao, personagem_tipo, fk_id_item, fk_id_habilidade1, fk_id_habilidade2 ) VALUES (7, 'Bandidos da Cidade', 30, 50, 'Invasores', 2, 10, 1, 'NPC', NULL, 5, 4);`,
+      `INSERT IGNORE INTO personagem (id_personagem, nome, vida, dinheiro, ocupacao, armadura, velocidade, reputacao, personagem_tipo, fk_id_item, fk_id_habilidade1, fk_id_habilidade2 ) VALUES (8, 'Coronel Zé Rufine', 100, 5000, 'Coronel militarizado', 2, 10, 1, 'NPC', NULL, 6, 7);`,
+      `INSERT IGNORE INTO personagem (id_personagem, nome, vida, dinheiro, ocupacao, armadura, velocidade, reputacao, personagem_tipo, fk_id_item, fk_id_habilidade1, fk_id_habilidade2 ) VALUES (9, 'chefeBando', NULL, NULL, 'chefeBando', NULL, NULL, NULL, 'NPC', NULL,NULL,NULL);`,
+      `INSERT IGNORE INTO personagem (id_personagem, nome, vida, dinheiro, ocupacao, armadura, velocidade, reputacao, personagem_tipo, fk_id_item, fk_id_habilidade1, fk_id_habilidade2 ) VALUES (10, 'donaVenda', NULL, NULL, 'donaVenda', NULL, NULL, NULL, 'NPC', NULL,NULL,NULL);`,
+      `INSERT IGNORE INTO personagem (id_personagem, nome, vida, dinheiro, ocupacao, armadura, velocidade, reputacao, personagem_tipo, fk_id_item, fk_id_habilidade1, fk_id_habilidade2 ) VALUES (11, 'padre', NULL, NULL, 'padre', NULL, NULL, NULL, 'NPC', NULL,NULL,NULL);`,
+      `INSERT IGNORE INTO personagem (id_personagem, nome, vida, dinheiro, ocupacao, armadura, velocidade, reputacao, personagem_tipo, fk_id_item, fk_id_habilidade1, fk_id_habilidade2 ) VALUES (12, 'criança', NULL, NULL, 'criança', NULL, NULL, NULL, 'NPC', NULL,NULL,NULL);`,
+      `INSERT IGNORE INTO dialogo (id_dialogo, fk_id_personagem, nome, fala) VALUES (1, 2, 'Lampião', 'Acorda, cabra! Precisa saber lutar à risca faca se quiser se juntar ao bando.');`,
+      `INSERT IGNORE INTO dialogo (id_dialogo, fk_id_personagem, nome, fala) VALUES (2, 1, 'Protagonista', 'Quem é você?!');`, // Assumindo Protagonista como ID 1
+      `INSERT IGNORE INTO dialogo (id_dialogo, fk_id_personagem, nome, fala) VALUES (3, 2, 'Lampião', 'Capitão do cangaço. Estou aqui para te ensinar a meter bala nos macacos! Agora, aperte a tecla ''Enter'' para começar.');`,
+      `INSERT IGNORE INTO dialogo (id_dialogo, fk_id_personagem, nome, fala) VALUES (4, 3, 'Maria Rendeira', 'Oh, pelo amor de meu Padinho. Me ajude a resgatar a minha jóia de família! Um jagunço a levou...');`,
+      `INSERT IGNORE INTO dialogo (id_dialogo, fk_id_personagem, nome, fala) VALUES (5, 1, 'Protagonista', 'Se acalme, posso ajudar a sinhora. Para onde levaram?');`,
+      `INSERT IGNORE INTO dialogo (id_dialogo, fk_id_personagem, nome, fala) VALUES (6, 3, 'Maria Rendeira', 'Para a fazenda do Coronel Francisco de Texeira. Se adiante cabra!');`,
+      `INSERT IGNORE INTO dialogo (id_dialogo, fk_id_personagem, nome, fala) VALUES (7, 2, 'Lampião', 'Afinal, o sinhor sabe se virar. Boa sorte cumpadi! Lembre de mantê o zoio aberto pra volante malandro pelas bandas.');`,
+      `INSERT IGNORE INTO dialogo (id_dialogo, fk_id_personagem, nome, fala) VALUES (8, 0, 'Narrador', 'Você chega na região da fazenda do finado coronel Francisco de Texeira, onde a tal da jóia se encontra. Está de noite, e só se ouve as cigarras e seus próprios passos. De repente, um sombra sinistra aparece em sua frente! E ela não parece amigável…');`,
+      `INSERT IGNORE INTO dialogo (id_dialogo, fk_id_personagem, nome, fala) VALUES (9, 0, 'Narrador', 'Após derrotar o Coronel Francisco de Teixeira, parece que a lua brilha mais. O cangaceiro retorna à casa de Maria Rendeira, mas antes de bater na porta, se questiona: será que ficar com a jóia não é melhor? Ela deve valer muitíssimo. Ou seria melhor devolver pra senhora?');`,
+      `INSERT IGNORE INTO dialogo (id_dialogo, fk_id_personagem, nome, fala) VALUES (10, 9, 'chefeBando', 'Ave, o caceteiro daquele volante maldito levou Batoré com ele! tu vai atrais dele. Tás em Caju Bunito, na delegacia. Seje rápido antes que o sol esfrie.');`,
+      `INSERT IGNORE INTO dialogo (id_dialogo, fk_id_personagem, nome, fala) VALUES (11, 0, 'Narrador', 'Com pressa, você vai até Caju Bonito, e chega na delegacia. É afastada, abafada e pequena, com apenas um policial cochilando, e seu colega de bando. Ao tentar tirar Batoré das grades, um barulho de tiro acorda o guarda, que te percebe e ataca.');`,
+      `INSERT IGNORE INTO dialogo (id_dialogo, fk_id_personagem, nome, fala) VALUES (12, 0, 'Narrador', 'Depois de uma árdua luta, você e Batoré batem em retirada até o acampamento recém-erguido nas fronteiras da cidade.');`,
+      `INSERT IGNORE INTO dialogo (id_dialogo, fk_id_personagem, nome, fala) VALUES (13, 9, 'chefeBando', 'Ora, e num é que voltaram mermo? Jurei a Mainha que tinhas desembestado de vez. Vamo passar 3 dias na cidade, pra vê se num roubam mais remédio de nois. Vai na venda de Dona Betânia, e compre um cadin de pinga, visse?');`,
+      `INSERT IGNORE INTO dialogo (id_dialogo, fk_id_personagem, nome, fala) VALUES (14, 0, 'Narrador', 'Você vai em direção à cidade, e se depara em três caminhos diferentes pra ir. Qual você vai?');`,
+      `INSERT IGNORE INTO dialogo (id_dialogo, fk_id_personagem, nome, fala) VALUES (15, 10, 'donaVenda', 'Boa tarde, querido! Deus bençoe! Quer o quê?');`,
+      `INSERT IGNORE INTO dialogo (id_dialogo, fk_id_personagem, nome, fala) VALUES (16, 11, 'padre', 'Boa tarde, senhor. Em reza, Nossa Senhora me disse que uma alma abençoada pelo Pai estaria passando por aqui. Vejo pelo menos um pouco de bondade em seu coração. Permita-me que eu ore por você, e peça proteção pela sua vida.');`,
+      `INSERT IGNORE INTO dialogo (id_dialogo, fk_id_personagem, nome, fala) VALUES (17, 0, 'Narrador', 'Você se sente um pouco mais seguro. Talvez a jornada se torne mais fácil.');`,
+      `INSERT IGNORE INTO dialogo (id_dialogo, fk_id_personagem, nome, fala) VALUES (18, 0, 'Narrador', 'Não há ninguém aqui. Talvez Deus não queira se manifestar hoje.');`,
+      `INSERT IGNORE INTO dialogo (id_dialogo, fk_id_personagem, nome, fala) VALUES (19, 0, 'Narrador', 'Você chega na parte residencial da cidade, quando escuta novamente um tiro, tal qual o dia do resgate na delegacia. Alguns civis correm, e uma criança chega aos prantos perto de onde você está.');`,
+      `INSERT IGNORE INTO dialogo (id_dialogo, fk_id_personagem, nome, fala) VALUES (20, 12, 'criança', 'Moço! Tem uns homem ruim atirando pra todo lado! Levaram meu pai e o dono da vendinha…');`,
+      `INSERT IGNORE INTO dialogo (id_dialogo, fk_id_personagem, nome, fala) VALUES (21, 1, 'Protagonista', 'Se acalme, minino. Eu dou conta deles. Fique escondido e reze pro Padinho me dar sorte');`,
+      `INSERT IGNORE INTO dialogo (id_dialogo, fk_id_personagem, nome, fala) VALUES (22, 0, 'Narrador', 'Você avança pelas ruas da cidade. As casas estão arrombadas, e os bandidos gritam, tocando o terror. Um deles te avista e começa o confronto!');`,
+      `INSERT IGNORE INTO dialogo (id_dialogo, fk_id_personagem, nome, fala) VALUES (23, 0, 'Narrador', 'Com os últimos bandidos no chão, a cidade enfim respira. Mas antes de sair, uma senhora te entrega um papel escondido: Zé Rufino vai atrás de vocês. Ele tá furioso. Vai pra fazenda dele, antes que ele vá até o sertão');`,
+      `INSERT IGNORE INTO dialogo (id_dialogo, fk_id_personagem, nome, fala) VALUES (24, 9, 'chefeBando', 'Zé Rufino... esse cabra é perigoso dimais. Já matou mais cangaceiro que a seca matou boi! Mas se ele quer guerra, que seja, arrocha!');`,
+      `INSERT IGNORE INTO dialogo (id_dialogo, fk_id_personagem, nome, fala) VALUES (25, 0, 'Narrador', 'Você se aproxima da fazenda de Zé Rufino. O mato é alto, o céu cinza. Há bandidos patrulhando com cachorros. Silêncio, até o galo cantar longe');`,
+      `INSERT IGNORE INTO dialogo (id_dialogo, fk_id_personagem, nome, fala) VALUES (26, 1, 'Protagonista', 'É agora. Ou ele morre de morte matada... ou eu viro lembrança no sertão');`,
+      `INSERT IGNORE INTO dialogo (id_dialogo, fk_id_personagem, nome, fala) VALUES (27, 8, 'Coronel Zé Rufine', 'Oxente oxente... o cabra que andaram dizendo que peitou a volante e enfrentou meus homens. Veio se entregar ou ser enterrado?');`,
+      `INSERT IGNORE INTO dialogo (id_dialogo, fk_id_personagem, nome, fala) VALUES (28, 1, 'Protagonista', 'Vim acabar com a injustiça que tu espalha por essas terras, seu lazarento. O povo merece paz, e tua hora chegou, coronel cheio de chifre!');`,
+
+      // Mapas
+      `INSERT IGNORE INTO mapa_fases (id_local, nome_mapa, status, fk_id_cenas, descricao ) VALUES (1, '----- Piranhas -----', 'incompleta', 5, 'Cidade mais frequentada pelo cangaço. Possuí centro para abastecimento de mantimentos e ajuda dos moradores locais. Algumas volantes espreitam a cidade.');`,
+      `INSERT IGNORE INTO mapa_fases (id_local, nome_mapa, status, fk_id_cenas, descricao ) VALUES (2, '----- Vila -----', 'incompleta', 5,'Centro de moradores. Alguns amigaveis, outros cabuetas.' );`,
+      `INSERT IGNORE INTO mapa_fases (id_local, nome_mapa, status, fk_id_cenas, descricao ) VALUES (3, '----- Delegacia ----', 'incompleta', 5,'Delegacia regional, famosa no sertão por ser bastante equipada' );`,
+      `INSERT IGNORE INTO mapa_fases (id_local, nome_mapa, status, fk_id_cenas, descricao ) VALUES (4, '----- Mercearia Secos e Molhados -----', 'incompleta', 5,'vende-se ["Água ardente", "Curativos", "Munição", "Parabelo", "Colete", "Anéis do sertão", "Carne de sol"]' );`,
+      `INSERT IGNORE INTO mapa_fases (id_local, nome_mapa, status, fk_id_cenas, descricao ) VALUES (5, '----- Igreja Piranhas -----', 'incompleta', 5,'Igreja onde ocorre encontros sociais, acordos e missas. Há boatos que Padre Cicero frequenta o local, curando os cangaçeiros das enfermidades.' );`,
+      `INSERT IGNORE INTO mapa_fases (id_local, nome_mapa, status, fk_id_cenas, descricao ) VALUES (6, '----- Caatinga Profunda -----', 'incompleta', 5,'Caatinga perigosa, onde possui bandidos, volantes e outros grupos de cangaceiros.' );`,
+      `INSERT IGNORE INTO mapa_fases (id_local, nome_mapa, status, fk_id_cenas, descricao ) VALUES (7, '----- Fazenda do Coronel F. de Texeira ------', 'incompleta', 6,'Fazenda pequena e comandada pelo coronel da região. Alguns jagunços e volantes protegendo.' );`,
+      `INSERT IGNORE INTO mapa_fases (id_local, nome_mapa, status, fk_id_cenas, descricao ) VALUES (8, '----- Fazenda do Coronel Zé Rufino -----', 'incompleta', 6,'Fazenda rica e farta da região. Extremamente perigosa, comandada pelo inimigo dos cangaceiros, Zé Rufino. Muitos jagunços, volantes e apoio do governo Vargas.' );`,
+    ];
+
+    for (const sql of insertQueries) {
+      await this.connection.query(sql);
+    }
+    console.log("Todos os dados iniciais inseridos/verificados.");
+  }
+
+  // Métodos de consulta e manipulação de dados
+
+  async getDialogosFromDb() {
+    try {
+      const [rows] = await this.connection.query(
+        "SELECT * FROM dialogo ORDER BY id_dialogo"
+      );
+      return rows;
+    } catch (error) {
+      console.error("Erro ao buscar diálogos do banco de dados:", error);
+      throw error;
+    }
+  }
+
+  // Já existe no database.js original (mas vamos renomear para evitar confusão com 'personagem' vs 'personagens')
+  async criarNovoPersonagem(
+    nome,
+    ocupacao,
+    vida,
+    armadura,
+    velocidade,
+    dinheiro,
+    reputacao
+  ) {
+    try {
+      const query = `
+        INSERT INTO personagem (nome, ocupacao, vida, armadura, velocidade, dinheiro, reputacao, personagem_tipo, fk_id_item, fk_id_habilidade1, fk_id_habilidade2)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'jogador', NULL, NULL, NULL)
+      `; // Assumindo tipo 'jogador' para novos personagens
+      const [result] = await this.connection.execute(query, [
+        nome,
+        ocupacao,
+        vida,
+        armadura,
+        velocidade,
+        dinheiro,
+        reputacao,
+      ]);
+      return result.insertId;
+    } catch (error) {
+      console.error("Erro ao criar novo personagem:", error);
+      throw error;
+    }
+  }
+
+  // Equivalente a inserir_personagem1_cabraPexte, mas como UPDATE para id_personagem = 1
+  async inicializarPersonagemCabraPexte(nome) {
+    try {
+      const sql = `
+        UPDATE personagem
+        SET nome = ?, vida = 160, dinheiro = 50, ocupacao = 'cabra da pexte',
+            armadura = 10, velocidade = 4, reputacao = 10, personagem_tipo = 'jogador',
+            fk_id_item = 1, fk_id_habilidade1 = 10, fk_id_habilidade2 = 11
+        WHERE id_personagem = 1;
+      `;
+      // Use execute para melhor segurança contra SQL Injection
+      await this.connection.execute(sql, [nome]);
+      console.log(
+        "Personagem Protagonista (Cabra da Pexte) inicializado/atualizado."
+      );
+    } catch (error) {
+      console.error("Erro ao inicializar personagem Cabra da Pexte:", error);
+      throw error;
+    }
+  }
+
+  // Equivalente a inserir_personagem1_espiritualista, mas como UPDATE para id_personagem = 1
+  async inicializarPersonagemEspiritualista(nome) {
+    try {
+      const sql = `
+        UPDATE personagem
+        SET nome = ?, vida = 160, dinheiro = 50, ocupacao = 'espiritualista',
+            armadura = 7, velocidade = 7, reputacao = 10, personagem_tipo = 'jogador',
+            fk_id_item = 1, fk_id_habilidade1 = 12, fk_id_habilidade2 = 13
+        WHERE id_personagem = 1;
+      `;
+      await this.connection.execute(sql, [nome]);
+      console.log(
+        "Personagem Protagonista (Espiritualista) inicializado/atualizado."
+      );
+    } catch (error) {
+      console.error("Erro ao inicializar personagem Espiritualista:", error);
+      throw error;
+    }
+  }
+
+  // Função para buscar um personagem pelo ID
+  async getPersonagemById(id) {
+    try {
+      const [rows] = await this.connection.query(
+        `SELECT * FROM personagem WHERE id_personagem = ?`,
+        [id]
+      );
+      return rows[0]; // Retorna o primeiro personagem encontrado ou undefined
+    } catch (error) {
+      console.error("Erro ao buscar personagem por ID:", error);
+      throw error;
+    }
+  }
+
+  // Função para atualizar a vida de um personagem (já existia no app.js)
+  async atualizarVidaPersonagem(id_personagem, novaVida) {
+    try {
+      const sql = `UPDATE personagem SET vida = ? WHERE id_personagem = ?`;
+      const [result] = await this.connection.execute(sql, [
+        novaVida,
+        id_personagem,
+      ]);
+      return result.affectedRows > 0;
+    } catch (error) {
+      console.error("Erro ao atualizar vida do personagem:", error);
+      throw error;
+    }
+  }
+
+  // Função para atualizar nome e ocupação (usada na rota /login do app.js)
+  async atualizarNomeOcupacaoPersonagem(id_personagem, nome, ocupacao) {
+    try {
+      const sql = `UPDATE personagem SET nome = ?, ocupacao = ? WHERE id_personagem = ?`;
+      const [result] = await this.connection.execute(sql, [
+        nome,
+        ocupacao,
+        id_personagem,
+      ]);
+      return result.affectedRows > 0;
+    } catch (error) {
+      console.error("Erro ao atualizar nome/ocupação do personagem:", error);
+      throw error;
+    }
+  }
+
+  // Novo método para buscar dados completos do protagonista para o login (do app.js)
+  async getProtagonistaFullData(protagonistaId) {
+    try {
+      const selectSql = `
+        SELECT p.id_personagem, p.nome, p.ocupacao, p.vida, p.armadura, p.dinheiro,
+               h1.id_habilidade AS habilidade1_id, h1.nome_hab AS habilidade1_nome, h1.dano AS habilidade1_dano, h1.falha AS habilidade1_falha,
+               h2.id_habilidade AS habilidade2_id, h2.nome_hab AS habilidade2_nome, h2.dano AS habilidade2_dano, h2.falha AS habilidade2_falha
+        FROM personagem p
+        LEFT JOIN habilidade h1 ON p.fk_id_habilidade1 = h1.id_habilidade
+        LEFT JOIN habilidade h2 ON p.fk_id_habilidade2 = h2.id_habilidade
+        WHERE p.id_personagem = ?;
+      `;
+      const [rows] = await this.connection.query(selectSql, [protagonistaId]);
+      return rows[0]; // Retorna o primeiro resultado ou undefined
+    } catch (error) {
+      console.error("Erro ao buscar dados completos do protagonista:", error);
+      throw error;
+    }
+  }
+
+  // Método para fechar a conexão
+  async close() {
+    if (this.connection) {
+      await this.connection.end();
+      console.log("Conexão com o banco de dados encerrada.");
+      this.connection = null; // Limpa a conexão após fechar
+    }
   }
 }
 
-function create_table_habilidades(con) {
-  console.log("Criando tabela 'habilidade'...");
-  const sql = `
-    CREATE TABLE IF NOT EXISTS habilidade (
-      id_habilidade INT NOT NULL PRIMARY KEY,
-      dano INT,
-      falha INT,
-      nome_hab VARCHAR(255)
-    );
-  `;
-  con.query(sql, callback_erro);
-}
-
-function create_table_cenas(con) {
-  console.log("Criando tabela 'cenas'...");
-  const sql = `
-    CREATE TABLE IF NOT EXISTS cenas (
-      id_cenas INT NOT NULL PRIMARY KEY,
-      descricao VARCHAR(255),
-      ganho INT,
-      nome_cena VARCHAR(255)
-    );
-  `;
-  con.query(sql, callback_erro);
-}
-
-function create_table_mapa_fases(con) {
-  console.log("criando tabela mapa_fases...");
-  const sql = `
-  CREATE TABLE IF NOT EXISTS mapa_fases(
-  id_local INT NOT NULL PRIMARY KEY, 
-  nome_mapa VARCHAR(255),
-  status VARCHAR(255),
-  fk_id_cenas INT,
-  descricao VARCHAR(255),
-  FOREIGN KEY (fk_id_cenas) REFERENCES cenas(id_cenas)
-  );
-  `;
-  con.query(sql, callback_erro);
-
-  console.log("fim...");
-}
-
-function create_table_dialogo(con) {
-  console.log("Criando tabela 'dialogo'...");
-  const sql = `
-    CREATE TABLE IF NOT EXISTS dialogo (
-      id_dialogo INT NOT NULL PRIMARY KEY,
-      fk_id_personagem INT,
-      fala TEXT,
-      FOREIGN KEY (fk_id_personagem) REFERENCES personagem(id_personagem)
-    );
-  `;
-  con.query(sql, callback_erro);
-}
-
-function create_table_dialogo_mapa_fases(con) {
-  console.log("Criando tabela 'dialogo_mapa_fases'...");
-  const sql = `
-    CREATE TABLE IF NOT EXISTS dialogo_mapa_fases (
-  fk_id_local INT,
-  fk_id_dialogo INT,
-  FOREIGN KEY (fk_id_local) REFERENCES mapa_fases(id_local),
-  FOREIGN KEY (fk_id_dialogo) REFERENCES dialogo(id_dialogo),
-  PRIMARY KEY(fk_id_local, fk_id_dialogo)
-);
-  `;
-  con.query(sql, callback_erro);
-}
-
-function create_table_itens(con) {
-  console.log("Criando tabela 'itens'...");
-  const sql = `
-    CREATE TABLE IF NOT EXISTS itens (
-      id_item INT NOT NULL PRIMARY KEY,
-      item VARCHAR(255)
-    );
-  `;
-  con.query(sql, callback_erro);
-}
-
-function create_table_personagem(con) {
-  console.log("Criando tabela 'personagem'...");
-  const sql = `
-    CREATE TABLE IF NOT EXISTS personagem (
-      id_personagem INT NOT NULL PRIMARY KEY,
-      nome VARCHAR(255),
-      vida INT,
-      dinheiro INT,
-      ocupacao VARCHAR(255),
-      armadura INT,
-      velocidade INT,
-      reputacao INT,
-      personagem_tipo VARCHAR(255),
-      fk_id_item INT,
-      fk_id_habilidade1 INT,
-      fk_id_habilidade2 INT,
-      FOREIGN KEY (fk_id_item) REFERENCES itens(id_item),
-      FOREIGN KEY (fk_id_habilidade1) REFERENCES habilidade(id_habilidade),
-      FOREIGN KEY (fk_id_habilidade2) REFERENCES habilidade(id_habilidade)
-    );
-  `;
-  con.query(sql, callback_erro);
-}
-
-function inserir_itens1(con) {
-  console.log("Inserindo itens 1...");
-  const sql = `INSERT INTO itens (id_item, item)
-             VALUES (1, 'cantil');`;
-  con.query(sql, callback_erro);
-}
-
-function inserir_hab1(con) {
-  console.log("Inserindo hab 1...");
-  const sql = `INSERT INTO habilidade (id_habilidade, dano, falha, nome_hab)
-             VALUES (1, 7, 2, 'pistola');`;
-  con.query(sql, callback_erro);
-}
-
-function inserir_hab2(con) {
-  console.log("Inserindo hab 2...");
-  const sql = `INSERT INTO habilidade (id_habilidade, dano, falha, nome_hab)
-             VALUES (2, 12, 5, 'tiro duplo de escopeta');`;
-  con.query(sql, callback_erro);
-}
-
-function inserir_personagem2(con) {
-  console.log("Inserindo personagem 2...");
-  const sql = `INSERT INTO personagem (id_personagem, nome, vida, dinheiro, ocupacao, armadura, velocidade, reputacao, personagem_tipo, fk_id_item, fk_id_habilidade1, fk_id_habilidade2 )
-                VALUES (2, 'Lampião', 80, 500, 'Líder do cangaço', 2, 4, 100, 'NPC', NULL , 1, 2);`;
-  con.query(sql, callback_erro);
-}
-
-function inserir_personagem3(con) {
-  console.log("Inserindo personagem 3...");
-  const sql = `INSERT INTO personagem (id_personagem, nome, vida, dinheiro, ocupacao, armadura, velocidade, reputacao, personagem_tipo, fk_id_item, fk_id_habilidade1, fk_id_habilidade2 )
-                VALUES (3, 'Maria Rendeira', NULL, NULL, 'dona de casa', NULL, NULL, NULL, 'NPC', NULL,NULL,NULL);`;
-  con.query(sql, callback_erro);
-}
-
-function inserir_dialogo1(con) {
-  console.log("Inserindo dialogo 1...");
-  const sql = `INSERT INTO dialogo (id_dialogo, fk_id_personagem, fala)
-               VALUES (1, 2, 'Acorda, cabra! Precisa saber lutar à risca faca se quiser se juntar ao bando.');`;
-  con.query(sql, callback_erro);
-}
-
-function inserir_dialogo2(con) {
-  console.log("Inserindo dialogo 2...");
-  const sql = `INSERT INTO dialogo (id_dialogo, fk_id_personagem, fala)
-               VALUES (2, 1, 'Quem é você?!');`;
-  con.query(sql, callback_erro);
-}
-
-function inserir_dialogo3(con) {
-  console.log("Inserindo dialogo 3...");
-  const sql = `INSERT INTO dialogo (id_dialogo, fk_id_personagem, fala)
-               VALUES (3, 2, 'Capitão do cangaço. Estou aqui para te ensinar a meter bala nos macacos! Agora, aperte a tecla ''Enter'' para começar.');`;
-  con.query(sql, callback_erro);
-}
-
-function inserir_dialogo4(con) {
-  console.log("Inserindo dialogo 4...");
-  const sql = `INSERT INTO dialogo (id_dialogo, fk_id_personagem, fala)
-               VALUES (4, 3, 'Oh, pelo amor de meu Padinho. Me ajude a resgatar a minha jóia de família! Um jagunço a levou...');`;
-  con.query(sql, callback_erro);
-}
-
-function inserir_dialogo5(con) {
-  console.log("Inserindo dialogo 5...");
-  const sql = `INSERT INTO dialogo (id_dialogo, fk_id_personagem, fala)
-               VALUES (5, 1, 'Se acalme, posso ajudar a sinhora. Para onde levaram?');`;
-  con.query(sql, callback_erro);
-}
-
-function inserir_dialogo6(con) {
-  console.log("Inserindo dialogo 6...");
-  const sql = `INSERT INTO dialogo (id_dialogo, fk_id_personagem, fala)
-               VALUES (6, 3, 'Para a fazenda do Coronel Francisco de Texeira. Se adiante cabra!');`;
-  con.query(sql, callback_erro);
-}
-
-function inserir_dialogo7(con) {
-  console.log("Inserindo dialogo 7...");
-  const sql = `INSERT INTO dialogo (id_dialogo, fk_id_personagem, fala)
-               VALUES (7, 2, 'Afinal, o sinhor sabe se virar. Boa sorte cumpadi! Lembre de mantê o zoio aberto pra volante malandro pelas bandas.');`;
-  con.query(sql, callback_erro);
-}
-
-function inserir_personagem0(con) {
-  console.log("Inserindo personagem 0...");
-  const sql = `INSERT INTO personagem (id_personagem, nome, vida, dinheiro, ocupacao, armadura, velocidade, reputacao, personagem_tipo, fk_id_item, fk_id_habilidade1, fk_id_habilidade2 )
-                VALUES (0, 'NARRADOR', NULL, NULL, 'NARRADOR', NULL, NULL, NULL, 'NPC', NULL,NULL,NULL);`;
-  con.query(sql, callback_erro);
-}
-
-function inserir_dialogo8(con) {
-  console.log("Inserindo dialogo 8...");
-  const sql = `INSERT INTO dialogo (id_dialogo, fk_id_personagem, fala)
-               VALUES 8, 0, 'Você chega na região da fazenda do finado coronel Francisco de Texeira, onde a tal da jóia se encontra. Está de noite, e só se ouve as cigarras e seus próprios passos. De repente, um sombra sinistra aparece em sua frente! E ela não parece amigável…');`;
-  con.query(sql, callback_erro);
-}
-
-function inserir_dialogo8(con) {
-  console.log("Inserindo dialogo 8...");
-  const sql = `INSERT INTO dialogo (id_dialogo, fk_id_personagem, fala)
-               VALUES (8, 0, 'Você chega na região da fazenda do finado coronel Francisco de Texeira, onde a tal da jóia se encontra. Está de noite, e só se ouve as cigarras e seus próprios passos. De repente, um sombra sinistra aparece em sua frente! E ela não parece amigável…');`;
-  con.query(sql, callback_erro);
-}
-
-function inserir_dialogo9(con) {
-  console.log("Inserindo dialogo 9...");
-  const sql = `INSERT INTO dialogo (id_dialogo, fk_id_personagem, fala)
-               VALUES (9, 0, 'Após derrotar o Coronel Francisco de Teixeira, parece que a lua brilha mais. O cangaceiro retorna à casa de Maria Rendeira, mas antes de bater na porta, se questiona: será que ficar com a jóia não é melhor? Ela deve valer muitíssimo. Ou seria melhor devolver pra senhora?');`;
-  con.query(sql, callback_erro);
-}
-
-function inserir_hab3(con) {
-  console.log("Inserindo hab 3...");
-  const sql = `INSERT INTO habilidade (id_habilidade, dano, falha, nome_hab)
-             VALUES (3, 10, 7, 'FACA');`;
-  con.query(sql, callback_erro);
-}
-
-function inserir_hab4(con) {
-  console.log("Inserindo hab 4...");
-  const sql = `INSERT INTO habilidade (id_habilidade, dano, falha, nome_hab)
-             VALUES (4, 10, 8, 'CHUTE');`;
-  con.query(sql, callback_erro);
-}
-
-function inserir_hab5(con) {
-  console.log("Inserindo hab 5...");
-  const sql = `INSERT INTO habilidade (id_habilidade, dano, falha, nome_hab)
-             VALUES (5, 10, 5, 'DISPARO');`;
-  con.query(sql, callback_erro);
-}
-
-function inserir_hab6(con) {
-  console.log("Inserindo hab 6...");
-  const sql = `INSERT INTO habilidade (id_habilidade, dano, falha, nome_hab)
-             VALUES (6, 15, 7, 'ESCOPETA');`;
-  con.query(sql, callback_erro);
-}
-
-function inserir_hab7(con) {
-  console.log("Inserindo hab 7...");
-  const sql = `INSERT INTO habilidade (id_habilidade, dano, falha, nome_hab)
-             VALUES (7, 14, 8, 'FACAO');`;
-  con.query(sql, callback_erro);
-}
-
-function inserir_hab8(con) {
-  console.log("Inserindo hab 8...");
-  const sql = `INSERT INTO habilidade (id_habilidade, dano, falha, nome_hab)
-             VALUES (8, 20, 2, 'PISTOLA 20M');`;
-  con.query(sql, callback_erro);
-}
-
-function inserir_hab9(con) {
-  console.log("Inserindo hab 9...");
-  const sql = `INSERT INTO habilidade (id_habilidade, dano, falha, nome_hab)
-             VALUES (9, 30, 2, 'ESPINGARDA');`;
-  con.query(sql, callback_erro);
-}
-
-function inserir_hab10(con) {
-  console.log("Inserindo hab 10...");
-  const sql = `INSERT INTO habilidade (id_habilidade, dano, falha, nome_hab)
-             VALUES (10, 25, 2, 'SOCO');`;
-  con.query(sql, callback_erro);
-}
-
-function inserir_hab11(con) {
-  console.log("Inserindo hab 11...");
-  const sql = `INSERT INTO habilidade (id_habilidade, dano, falha, nome_hab)
-             VALUES (11, 30, 4, 'PEIXERA');`;
-  con.query(sql, callback_erro);
-}
-
-function inserir_hab12(con) {
-  console.log("Inserindo hab 12...");
-  const sql = `INSERT INTO habilidade (id_habilidade, dano, falha, nome_hab)
-             VALUES (12, 60, 7, 'me de padin ciço');`;
-  con.query(sql, callback_erro);
-}
-
-function inserir_hab13(con) {
-  console.log("Inserindo hab 13...");
-  const sql = `INSERT INTO habilidade (id_habilidade, dano, falha, nome_hab)
-             VALUES (13, 40, 4, 'PENITENCIA');`;
-  con.query(sql, callback_erro);
-}
-
-function inserir_personagem4(con) {
-  console.log("Inserindo personagem 4...");
-  const sql = `INSERT INTO personagem (id_personagem, nome, vida, dinheiro, ocupacao, armadura, velocidade, reputacao, personagem_tipo, fk_id_item, fk_id_habilidade1, fk_id_habilidade2 )
-                VALUES (4, 'Coronel Francisco de Texeira', 60,  50, 'Coronel da fazenda de gados', 4,  10, 10, 'NPC', NULL, 3, 4);`;
-  con.query(sql, callback_erro);
-}
-
-function inserir_personagem5(con) {
-  console.log("Inserindo personagem 5...");
-  const sql = `INSERT INTO personagem (id_personagem, nome, vida, dinheiro, ocupacao, armadura, velocidade, reputacao, personagem_tipo, fk_id_item, fk_id_habilidade1, fk_id_habilidade2 )
-                VALUES (5, 'Volante', 50, 50, 'Policiais do sertão', 4,  7, 1, 'NPC', NULL, 3, 1);`;
-  con.query(sql, callback_erro);
-}
-
-function inserir_personagem6(con) {
-  console.log("Inserindo personagem 6...");
-  const sql = `INSERT INTO personagem (id_personagem, nome, vida, dinheiro, ocupacao, armadura, velocidade, reputacao, personagem_tipo, fk_id_item, fk_id_habilidade1, fk_id_habilidade2 )
-                VALUES (6, 'Bandidos da Cidade', 30, 50, 'Invasores', 2,  10, 1, 'NPC', NULL, 5, 4);`;
-  con.query(sql, callback_erro);
-}
-
-function inserir_personagem7(con) {
-  console.log("Inserindo personagem 7...");
-  const sql = `INSERT INTO personagem (id_personagem, nome, vida, dinheiro, ocupacao, armadura, velocidade, reputacao, personagem_tipo, fk_id_item, fk_id_habilidade1, fk_id_habilidade2 )
-                VALUES (7, 'Bandidos da Cidade', 30, 50, 'Invasores', 2,  10, 1, 'NPC', NULL, 5, 4);`;
-  con.query(sql, callback_erro);
-}
-
-function inserir_personagem8(con) {
-  console.log("Inserindo personagem 8...");
-  const sql = `INSERT INTO personagem (id_personagem, nome, vida, dinheiro, ocupacao, armadura, velocidade, reputacao, personagem_tipo, fk_id_item, fk_id_habilidade1, fk_id_habilidade2 )
-                VALUES (8, 'Coronel Zé Rufine', 100, 5000, 'Coronel militarizado', 2,  10, 1, 'NPC', NULL, 6, 7);`;
-  con.query(sql, callback_erro);
-}
-
-function inserir_personagem9(con) {
-  console.log("Inserindo personagem 9...");
-  const sql = `INSERT INTO personagem (id_personagem, nome, vida, dinheiro, ocupacao, armadura, velocidade, reputacao, personagem_tipo, fk_id_item, fk_id_habilidade1, fk_id_habilidade2 )
-                VALUES (9, 'chefeBando', NULL, NULL, 'chefeBando', NULL, NULL, NULL, 'NPC', NULL,NULL,NULL);`;
-  con.query(sql, callback_erro);
-}
-
-function inserir_personagem10(con) {
-  console.log("Inserindo personagem 10...");
-  const sql = `INSERT INTO personagem (id_personagem, nome, vida, dinheiro, ocupacao, armadura, velocidade, reputacao, personagem_tipo, fk_id_item, fk_id_habilidade1, fk_id_habilidade2 )
-                VALUES (10, 'donaVenda', NULL, NULL, 'donaVenda', NULL, NULL, NULL, 'NPC', NULL,NULL,NULL);`;
-  con.query(sql, callback_erro);
-}
-
-function inserir_personagem11(con) {
-  console.log("Inserindo personagem 11...");
-  const sql = `INSERT INTO personagem (id_personagem, nome, vida, dinheiro, ocupacao, armadura, velocidade, reputacao, personagem_tipo, fk_id_item, fk_id_habilidade1, fk_id_habilidade2 )
-                VALUES (11, 'padre', NULL, NULL, 'padre', NULL, NULL, NULL, 'NPC', NULL,NULL,NULL);`;
-  con.query(sql, callback_erro);
-}
-
-function inserir_personagem12(con) {
-  console.log("Inserindo personagem 12...");
-  const sql = `INSERT INTO personagem (id_personagem, nome, vida, dinheiro, ocupacao, armadura, velocidade, reputacao, personagem_tipo, fk_id_item, fk_id_habilidade1, fk_id_habilidade2 )
-                VALUES (12, 'criança', NULL, NULL, 'criança', NULL, NULL, NULL, 'NPC', NULL,NULL,NULL);`;
-  con.query(sql, callback_erro);
-}
-
-function inserir_dialogo10(con) {
-  console.log("Inserindo dialogo 10...");
-  const sql = `INSERT INTO dialogo (id_dialogo, fk_id_personagem, fala)
-               VALUES (10, 9, 'Ave, o caceteiro daquele volante maldito levou Batoré com ele! tu vai atrais dele. Tás em Caju Bunito, na delegacia. Seje rápido antes que o sol esfrie.');`;
-  con.query(sql, callback_erro);
-}
-
-function inserir_dialogo11(con) {
-  console.log("Inserindo dialogo 11...");
-  const sql = `INSERT INTO dialogo (id_dialogo, fk_id_personagem, fala)
-               VALUES (11, 0, 'Com pressa, você vai até Caju Bonito, e chega na delegacia. É afastada, abafada e pequena, com apenas um policial cochilando, e seu colega de bando. Ao tentar tirar Batoré das grades, um barulho de tiro acorda o guarda, que te percebe e ataca.');`;
-  con.query(sql, callback_erro);
-}
-
-function inserir_dialogo12(con) {
-  console.log("Inserindo dialogo 12...");
-  const sql = `INSERT INTO dialogo (id_dialogo, fk_id_personagem, fala)
-               VALUES (12, 0, '"Depois de uma árdua luta, você e Batoré batem em retirada até o acampamento recém-erguido nas fronteiras da cidade.');`;
-  con.query(sql, callback_erro);
-}
-
-function inserir_dialogo13(con) {
-  console.log("Inserindo dialogo 13...");
-  const sql = `INSERT INTO dialogo (id_dialogo, fk_id_personagem, fala)
-               VALUES (13, 9, 'Ora, e num é que voltaram mermo? Jurei a Mainha que tinhas desembestado de vez. Vamo passar 3 dias na cidade, pra vê se num roubam mais remédio de nois. Vai na venda de Dona Betânia, e compre um cadin de pinga, visse?');`;
-  con.query(sql, callback_erro);
-}
-
-function inserir_dialogo14(con) {
-  console.log("Inserindo dialogo 14...");
-  const sql = `INSERT INTO dialogo (id_dialogo, fk_id_personagem, fala)
-               VALUES (14, 0, 'Você vai em direção à cidade, e se depara em três caminhos diferentes pra ir. Qual você vai?');`;
-  con.query(sql, callback_erro);
-}
-
-function inserir_dialogo15(con) {
-  console.log("Inserindo dialogo 15 ...");
-  const sql = `INSERT INTO dialogo (id_dialogo, fk_id_personagem, fala)
-               VALUES (15, 10, 'Boa tarde, querido! Deus bençoe! Quer o quê?');`;
-  con.query(sql, callback_erro);
-}
-
-function inserir_dialogo16(con) {
-  console.log("Inserindo dialogo 16 ...");
-  const sql = `INSERT INTO dialogo (id_dialogo, fk_id_personagem, fala)
-               VALUES (16, 11, 'Boa tarde, senhor. Em reza, Nossa Senhora me disse que uma alma abençoada pelo Pai estaria passando por aqui. Vejo pelo menos um pouco de bondade em seu coração. Permita-me que eu ore por você, e peça proteção pela sua vida.');`;
-  con.query(sql, callback_erro);
-}
-
-function inserir_dialogo17(con) {
-  console.log("Inserindo dialogo 17...");
-  const sql = `INSERT INTO dialogo (id_dialogo, fk_id_personagem, fala)
-               VALUES (17, 0, 'Você se sente um pouco mais seguro. Talvez a jornada se torne mais fácil.');`;
-  con.query(sql, callback_erro);
-}
-
-function inserir_dialogo18(con) {
-  console.log("Inserindo dialogo 18...");
-  const sql = `INSERT INTO dialogo (id_dialogo, fk_id_personagem, fala)
-               VALUES (18, 0, 'Não há ninguém aqui. Talvez Deus não queira se manifestar hoje.');`;
-  con.query(sql, callback_erro);
-}
-
-function inserir_dialogo19(con) {
-  console.log("Inserindo dialogo 19...");
-  const sql = `INSERT INTO dialogo (id_dialogo, fk_id_personagem, fala)
-               VALUES (19, 0, 'Você chega na parte residencial da cidade, quando escuta novamente um tiro, tal qual o dia do resgate na delegacia. Alguns civis correm, e uma criança chega aos prantos perto de onde você está.');`;
-  con.query(sql, callback_erro);
-}
-
-function inserir_dialogo20(con) {
-  console.log("Inserindo dialogo 20...");
-  const sql = `INSERT INTO dialogo (id_dialogo, fk_id_personagem, fala)
-               VALUES (20, 12, 'Moço! Tem uns homem ruim atirando pra todo lado! Levaram meu pai e o dono da vendinha…');`;
-  con.query(sql, callback_erro);
-}
-
-function inserir_dialogo21(con) {
-  console.log("Inserindo dialogo 21...");
-  const sql = `INSERT INTO dialogo (id_dialogo, fk_id_personagem, fala)
-               VALUES (21, 1, 'Se acalme, minino. Eu dou conta deles. Fique escondido e reze pro Padinho me dar sorte');`;
-  con.query(sql, callback_erro);
-}
-
-function inserir_dialogo22(con) {
-  console.log("Inserindo dialogo 22...");
-  const sql = `INSERT INTO dialogo (id_dialogo, fk_id_personagem, fala)
-               VALUES (22, 0, 'Você avança pelas ruas da cidade. As casas estão arrombadas, e os bandidos gritam, tocando o terror. Um deles te avista e começa o confronto!');`;
-  con.query(sql, callback_erro);
-}
-
-function inserir_dialogo23(con) {
-  console.log("Inserindo dialogo 23...");
-  const sql = `INSERT INTO dialogo (id_dialogo, fk_id_personagem, fala)
-               VALUES (23, 0, 'Com os últimos bandidos no chão, a cidade enfim respira. Mas antes de sair, uma senhora te entrega um papel escondido: Zé Rufino vai atrás de vocês. Ele tá furioso. Vai pra fazenda dele, antes que ele vá até o sertão');`;
-  con.query(sql, callback_erro);
-}
-
-function inserir_dialogo24(con) {
-  console.log("Inserindo dialogo 24...");
-  const sql = `INSERT INTO dialogo (id_dialogo, fk_id_personagem, fala)
-               VALUES (24, 9, 'Zé Rufino... esse cabra é perigoso dimais. Já matou mais cangaceiro que a seca matou boi! Mas se ele quer guerra, que seja, arrocha!');`;
-  con.query(sql, callback_erro);
-}
-
-function inserir_dialogo25(con) {
-  console.log("Inserindo dialogo 25...");
-  const sql = `INSERT INTO dialogo (id_dialogo, fk_id_personagem, fala)
-               VALUES (25, 0, 'Você se aproxima da fazenda de Zé Rufino. O mato é alto, o céu cinza. Há bandidos patrulhando com cachorros. Silêncio, até o galo cantar longe');`;
-  con.query(sql, callback_erro);
-}
-
-function inserir_dialogo26(con) {
-  console.log("Inserindo dialogo 26...");
-  const sql = `INSERT INTO dialogo (id_dialogo, fk_id_personagem, fala)
-               VALUES (26, 1, 'É agora. Ou ele morre de morte matada... ou eu viro lembrança no sertão');`;
-  con.query(sql, callback_erro);
-}
-
-function inserir_dialogo27(con) {
-  console.log("Inserindo dialogo 27...");
-  const sql = `INSERT INTO dialogo (id_dialogo, fk_id_personagem, fala)
-               VALUES (27, 8, 'Oxente oxente... o cabra que andaram dizendo que peitou a volante e enfrentou meus homens. Veio se entregar ou ser enterrado?');`;
-  con.query(sql, callback_erro);
-}
-
-function inserir_dialogo28(con) {
-  console.log("Inserindo dialogo 28...");
-  const sql = `INSERT INTO dialogo (id_dialogo, fk_id_personagem, fala)
-               VALUES (28, 1, 'Vim acabar com a injustiça que tu espalha por essas terras, seu lazarento. O povo merece paz, e tua hora chegou, coronel cheio de chifre!');`;
-  con.query(sql, callback_erro);
-}
-
-function inserir_cena1(con) {
-  console.log("Inserindo cena 1...");
-  const sql = `INSERT INTO cenas (id_cenas, descricao, ganho, nome_cena)
-               VALUES (1, NULL, NULL, 'Começo do jogo');`;
-  con.query(sql, callback_erro);
-}
-
-function inserir_cena2(con) {
-  console.log("Inserindo cena 2...");
-  const sql = `INSERT INTO cenas (id_cenas, descricao, ganho, nome_cena)
-               VALUES (2, NULL, NULL, 'TUTORIAL');`;
-  con.query(sql, callback_erro);
-}
-
-function inserir_cena3(con) {
-  console.log("Inserindo cena 3...");
-  const sql = `INSERT INTO cenas (id_cenas, descricao, ganho, nome_cena)
-               VALUES (3, 'Tutorial concluído. Ganho de: 50 cruzados novos', 50, 'FASE 1 - A JÓIA ROUBADA');`;
-  con.query(sql, callback_erro);
-}
-
-function inserir_cena4(con) {
-  console.log("Inserindo cena 4...");
-  const sql = `INSERT INTO cenas (id_cenas, descricao, ganho, nome_cena)
-               VALUES (4, 'Missão da joia concluída. Ganho de 75 cruzados novos', 75, 'FASE 2 - A VOLANTE');`;
-  con.query(sql, callback_erro);
-}
-
-function inserir_cena5(con) {
-  console.log("Inserindo cena 5...");
-  const sql = `INSERT INTO cenas (id_cenas, descricao, ganho, nome_cena)
-               VALUES (5, 'Missão da . Ganho de:  Mil cruzados novos', 1000, 'FASE 3 - CIDADE DO SERTÃO');`;
-  con.query(sql, callback_erro);
-}
-
-function inserir_cena6(con) {
-  console.log("Inserindo cena 6...");
-  const sql = `INSERT INTO cenas (id_cenas, descricao, ganho, nome_cena)
-               VALUES (6, 'Missão da . Ganho de:  Mil cruzados novo', 9999, 'FASE 4 - FAZENDA DO CORONEL ZÉ RUFINO');`;
-  con.query(sql, callback_erro);
-}
-
-function inserir_cena7(con) {
-  console.log("Inserindo cena 7...");
-  const sql = `INSERT INTO cenas (id_cenas, descricao, ganho, nome_cena)
-               VALUES (7, 'Jogo zerado. Você recebeu o título de Rei do Cangaço', 99999999, 'FIM DE JOGO');`;
-  con.query(sql, callback_erro);
-}
-
-function inserir_cena8(con) {
-  console.log("Inserindo cena 8...");
-  const sql = `INSERT INTO cenas (id_cenas, descricao, ganho, nome_cena)
-               VALUES (8, 'Game over. Você não conseguiu vencer o coronel Zé Rufino, perdeu tudo e virou lembrança no sertão.', 0, 'FIM DE JOGO');`;
-  con.query(sql, callback_erro);
-}
-
-function inserir_mapa1(con) {
-  console.log("Inserindo mapa 1...");
-  const sql = `INSERT INTO mapa_fases (id_local, nome_mapa, status, fk_id_cenas, descricao )
-               VALUES (1, '----- Piranhas -----', 'incompleta', 5, 'Cidade mais frequentada pelo cangaço. Possuí centro para abastecimento de mantimentos e ajuda dos moradores locais. Algumas volantes espreitam a cidade.');`;
-  con.query(sql, callback_erro);
-}
-
-function inserir_mapa2(con) {
-  console.log("Inserindo mapa 2...");
-  const sql = `INSERT INTO mapa_fases (id_local, nome_mapa, status, fk_id_cenas, descricao )
-               VALUES (2, '----- Vila -----', 'incompleta', 5,'Centro de moradores. Alguns amigaveis, outros cabuetas.' );`;
-  con.query(sql, callback_erro);
-}
-
-function inserir_mapa3(con) {
-  console.log("Inserindo mapa 3...");
-  const sql = `INSERT INTO mapa_fases (id_local, nome_mapa, status, fk_id_cenas, descricao )
-               VALUES (3, '----- Delegacia ----', 'incompleta', 5,'Delegacia regional, famosa no sertão por ser bastante equipada' );`;
-  con.query(sql, callback_erro);
-}
-
-function inserir_mapa4(con) {
-  console.log("Inserindo mapa 4...");
-  const sql = `INSERT INTO mapa_fases (id_local, nome_mapa, status, fk_id_cenas, descricao )
-               VALUES (4, '----- Mercearia Secos e Molhados -----', 'incompleta', 5,'vende-se ["Água ardente", "Curativos", "Munição", "Parabelo", "Colete", "Anéis do sertão", "Carne de sol"]' );`;
-  con.query(sql, callback_erro);
-}
-
-function inserir_mapa5(con) {
-  console.log("Inserindo mapa 5...");
-  const sql = `INSERT INTO mapa_fases (id_local, nome_mapa, status, fk_id_cenas, descricao )
-               VALUES (5, '----- Igreja Piranhas -----', 'incompleta', 5,'Igreja onde ocorre encontros sociais, acordos e missas. Há boatos que Padre Cicero frequenta o local, curando os cangaçeiros das enfermidades.' );`;
-  con.query(sql, callback_erro);
-}
-
-function inserir_mapa6(con) {
-  console.log("Inserindo mapa 6...");
-  const sql = `INSERT INTO mapa_fases (id_local, nome_mapa, status, fk_id_cenas, descricao )
-               VALUES (6, '----- Caatinga Profunda -----', 'incompleta', 5,'Caatinga perigosa, onde possui bandidos, volantes e outros grupos de cangaceiros.' );`;
-  con.query(sql, callback_erro);
-}
-
-function inserir_mapa7(con) {
-  console.log("Inserindo mapa 7...");
-  const sql = `INSERT INTO mapa_fases (id_local, nome_mapa, status, fk_id_cenas, descricao )
-               VALUES (7, '----- Fazenda do Coronel F. de Texeira ------', 'incompleta', 6,'Fazenda pequena e comandada pelo coronel da região. Alguns jagunços e volantes protegendo.' );`;
-  con.query(sql, callback_erro);
-}
-
-function inserir_mapa8(con) {
-  console.log("Inserindo mapa 8...");
-  const sql = `INSERT INTO mapa_fases (id_local, nome_mapa, status, fk_id_cenas, descricao )
-               VALUES (8, '----- Fazenda do Coronel Zé Rufino -----', 'incompleta', 6,'Fazenda rica e farta da região. Extremamente perigosa, comandada pelo inimigo dos cangaceiros, Zé Rufino. Muitos jagunços, volantes e apoio do governo Vargas.' );`;
-  con.query(sql, callback_erro);
-}
-
-function consulta_habilidade(con) {
-  console.log("Consultando habilidades...");
-  const sql = `SELECT * FROM habilidade WHERE id_habilidade = 1;`;
-
-  con.query(sql, function (err, results, fields) {
-    if (err) {
-      console.error("Erro: " + err.stack);
-      return;
-    }
-
-    console.log("Consulta realizada com sucesso:");
-    if (results && results.length > 0) {
-      results.forEach((hab) => {
-        console.log(`ID: ${hab.id_habilidade}`);
-        console.log(`Nome: ${hab.nome_hab}`);
-        console.log(`Dano: ${hab.dano}`);
-        console.log(`Falha: ${hab.falha}`);
-        console.log("------------------------------");
-      });
-    } else {
-      console.log("Nenhuma habilidade encontrada.");
-    }
-  });
-}
-
-function close(con) {
-  console.log("Fechando conexão...");
-  con.end(function (err) {
-    if (err) {
-      console.error("Erro ao fechar conexão:", err.message);
-    } else {
-      console.log("Conexão encerrada com sucesso.");
-    }
-  });
-}
-
-function inserirDb() {
-  console.log("==== INÍCIO ====");
-
-  open_connection_and_create_db(function (conexao) {
-    create_table_habilidades(conexao);
-    create_table_cenas(conexao);
-    create_table_mapa_fases(conexao);
-    create_table_itens(conexao);
-    create_table_personagem(conexao);
-    create_table_dialogo(conexao);
-    create_table_dialogo_mapa_fases(conexao);
-    inserir_itens1(conexao);
-    inserir_hab1(conexao);
-    inserir_hab2(conexao);
-    inserir_hab3(conexao);
-    inserir_hab4(conexao);
-    inserir_hab5(conexao);
-    inserir_hab6(conexao);
-    inserir_hab7(conexao);
-    inserir_hab8(conexao);
-    inserir_hab9(conexao);
-    inserir_hab10(conexao);
-    inserir_hab11(conexao);
-    inserir_hab12(conexao);
-    inserir_hab13(conexao);
-    inserir_personagem0(conexao);
-    inserir_personagem1(conexao);
-    inserir_personagem2(conexao);
-    inserir_personagem3(conexao);
-    inserir_personagem4(conexao);
-    inserir_personagem5(conexao);
-    inserir_personagem6(conexao);
-    inserir_personagem7(conexao);
-    inserir_personagem8(conexao);
-    inserir_personagem9(conexao);
-    inserir_personagem10(conexao);
-    inserir_personagem11(conexao);
-    inserir_personagem12(conexao);
-    inserir_dialogo1(conexao);
-    inserir_dialogo2(conexao);
-    inserir_dialogo3(conexao);
-    inserir_dialogo4(conexao);
-    inserir_dialogo5(conexao);
-    inserir_dialogo6(conexao);
-    inserir_dialogo7(conexao);
-    inserir_dialogo8(conexao);
-    inserir_dialogo9(conexao);
-    inserir_dialogo10(conexao);
-    inserir_dialogo11(conexao);
-    inserir_dialogo12(conexao);
-    inserir_dialogo13(conexao);
-    inserir_dialogo14(conexao);
-    inserir_dialogo15(conexao);
-    inserir_dialogo16(conexao);
-    inserir_dialogo17(conexao);
-    inserir_dialogo18(conexao);
-    inserir_dialogo19(conexao);
-    inserir_dialogo20(conexao);
-    inserir_dialogo21(conexao);
-    inserir_dialogo22(conexao);
-    inserir_dialogo23(conexao);
-    inserir_dialogo24(conexao);
-    inserir_dialogo25(conexao);
-    inserir_dialogo26(conexao);
-    inserir_dialogo27(conexao);
-    inserir_dialogo28(conexao);
-    //consulta_habilidade(conexao)
-    inserir_cena1(conexao);
-    inserir_cena2(conexao);
-    inserir_cena3(conexao);
-    inserir_cena4(conexao);
-    inserir_cena5(conexao);
-    inserir_cena6(conexao);
-    inserir_cena7(conexao);
-    inserir_cena8(conexao);
-    inserir_mapa1(conexao);
-    inserir_mapa2(conexao);
-    inserir_mapa3(conexao);
-    inserir_mapa4(conexao);
-    inserir_mapa5(conexao);
-    inserir_mapa6(conexao);
-    close(conexao);
-  });
-
-  console.log("==== FIM ====");
-}
-
-function inserir_personagem1(con) {
-  console.log("Inserindo personagem 1...");
-  const sql = `INSERT INTO personagem (id_personagem, nome, vida, dinheiro, ocupacao, armadura, velocidade, reputacao, personagem_tipo, fk_id_item, fk_id_habilidade1, fk_id_habilidade2 )
-                VALUES (1, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'jogador', NULL, NULL, NULL);`;
-  con.query(sql, callback_erro);
-}
-
-// function inserir_personagem1_cabraPexte(con, nome) {
-//   console.log("Inserindo personagem 1...");
-//   const sql = `INSERT INTO personagem (id_personagem, nome, vida, dinheiro, ocupacao, armadura, velocidade, reputacao, personagem_tipo, fk_id_item, fk_id_habilidade1, fk_id_habilidade2 )
-//                 VALUES (1, ${nome}, 160, 50, 'cabra da pexte"', 10, 4, 10, 'jogador', 1, 10, 11);`;
-//   con.query(sql, callback_erro);
-// }
-
-// function inserir_personagem1_espiritualista(con, nome) {
-//   console.log("Inserindo personagem 1...");
-//   const sql = `INSERT INTO personagem (id_personagem, nome, vida, dinheiro, ocupacao, armadura, velocidade, reputacao, personagem_tipo, fk_id_item, fk_id_habilidade1, fk_id_habilidade2 )
-//                 VALUES (1, ${nome}, 160, 50, 'espiritualista', 7, 7, 10, 'jogador', 1, 12, 13);`;
-//   con.query(sql, callback_erro);
-// }
-
-module.exports = {
-  inserirDb,
-  inserir_personagem1,
-  // inserir_personagem1_cabraPexte,
-  // inserir_personagem1_espiritualista,
-  callback_erro,
-  close,
-};
-
-inserirDb();
+// Exporta a classe para ser usada em outros arquivos (ex: app.js / server.js)
+module.exports = Database;
+
+// Remova a chamada inserirDb() e as exportações globais antigas
+// pois a inicialização será feita via `db.connect()` no `app.js`
+// delete module.exports.inserirDb;
+// delete module.exports.inserir_personagem1;
+// delete module.exports.inserir_personagem1_cabraPexte;
+// delete module.exports.inserir_personagem1_espiritualista;
+// delete module.exports.callback_erro;
+// delete module.exports.close;

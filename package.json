@@ -10,7 +10,7 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "description": "",
+  "description": "Projeto_final_Pweb_POO_BD - Continuação do projeto de RPG",
   "dependencies": {
     "ejs": "^3.1.10",
     "express": "^5.1.0",
@@ -18,7 +18,6 @@
     "mysql2": "^3.14.1",
     "nodemon": "^3.1.10"
   },
-  "devDependencies": {},
   "repository": {
     "type": "git",
     "url": "git+https://github.com/soneylegal/dbprojetointerface.git"
@@ -26,5 +25,6 @@
   "bugs": {
     "url": "https://github.com/soneylegal/dbprojetointerface/issues"
   },
-  "homepage": "https://github.com/soneylegal/dbprojetointerface#readme"
+  "homepage": "https://github.com/soneylegal/dbprojetointerface#readme",
+  "devDependencies": {}
 }

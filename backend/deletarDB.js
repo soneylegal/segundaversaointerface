@@ -8,7 +8,7 @@ function delete_database() {
   const con = mysql.createConnection({
     host: "localhost",
     user: "root",
-    password: "root",
+    password: "12345678",
     database: "dbprojeto",
   });
 
