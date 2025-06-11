@@ -1,0 +1,120 @@
+html, body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden; /* Só mantenha se quiser impedir scroll */
+  font-family: Arial, sans-serif;
+  /* Removi as propriedades de background, pois não há imagem direta */
+  transition: background-image 1s ease-in-out;
+}
+
+/* PERSONAGEM no canto inferior esquerdo */
+#jogador {
+  position: fixed;
+  bottom: 20px;
+  left: 20px;
+  width: 300px; /* alinhado à largura da imagem */
+  z-index: 10;
+  pointer-events: auto;
+}
+#jogador img {
+  width: 100%; /* preencherá o container */
+  height: auto;
+}
+
+/* container dos personagens do lado direito */
+#img-personagens {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  display: flex;
+  gap: 10px;
+  z-index: 10;
+}
+#img-personagens img {
+  width: 350px;
+  height: auto;
+  pointer-events: auto;
+  position: static; /* remove fixed para respeitar flex layout */
+}
+
+/* CAIXA de diálogo centralizada no rodapé */
+#caixa-de-dialogo {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 60%;
+  height: 120px; /* Aumenta para acomodar o botão */
+  background: rgba(255, 255, 255, 0.8);
+  padding: 10px;
+  border: 2px solid #333;
+  border-radius: 10px;
+  box-shadow: 0 0 10px rgba(0,0,0,0.4);
+  overflow-y: auto;
+  z-index: 5;
+  pointer-events: auto;
+}
+
+#caixa-de-dialogo button#proximo-btn {
+  align-self: flex-end;
+  margin-top: 5px;
+  font-size: 14px;
+  padding: 6px 12px;
+  background-color: #2e8b57;
+  color: white;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+#caixa-de-dialogo button#proximo-btn:hover {
+  background-color: #1e6b47;
+}
+
+/* Botões de ação */
+#comandos {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+#comandos input, #comandos button {
+  padding: 10px;
+  font-size: 16px;
+}
+
+button {
+  padding: 10px 20px;
+  border: none;
+  background-color: #2e8b57;
+  color: white;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+button:hover {
+  background-color: #1e6b47;
+}
+
+/* CENÁRIOS DE FUNDO */
+
+#cenario img {
+  display: none;         /* Esconde todos por padrão */
+  width: 100vw;          /* Ajusta à largura da tela */
+  height: 100vh;         /* Ajusta à altura da tela */
+  object-fit: cover;     /* Faz o corte ficar bonito e centralizado */
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: -1;           /* Fica no fundo */
+}
+
+#cenario img.ativo {
+  display: block;        /* Mostra só o cenário ativo */
+}

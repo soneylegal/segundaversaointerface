@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Cangaceiros</title>
+    <link rel="stylesheet" href="css/jogo.css" />
+  </head>
+  <body>
+    <div id="jogo">
+      <div id="caixa-de-dialogo"></div>
+
+      <div id="comandos"></div>
+
+      <div id="comecar">
+        <input type="text" id="nomeJogador" placeholder="Seu nome" />
+        <button onclick="comecarJogo()">Começar</button>
+      </div>
+
+      <div id="dialogo-container" style="display: none">
+        <strong id="nome-personagem"></strong>
+        <p id="fala-dialogo"></p>
+      </div>
+
+      <div id="jogador">
+        <img src="imgspjcangaco/protagonista_relaxado.png" alt="Protagonista" />
+      </div>
+
+      <div id="cenario">
+        <img
+          id="caatinga"
+          class="ativo"
+          src="imgspjcangaco/fundo_caatinga_luta.png"
+          alt="Caatinga"
+        />
+        <img id="fase1" src="imgspjcangaco/fazenda1.png" alt="Fazenda 1" />
+        <img
+          id="fase2"
+          src="imgspjcangaco/vilapiranhas.png"
+          alt="Vila Piranhas"
+        />
+        <img id="fase3" src="imgspjcangaco/igrejafora.png" alt="Igreja Fora" />
+        <img id="fase4" src="imgspjcangaco/fazenda2.png" alt="Fazenda 2" />
+      </div>
+    </div>
+
+    <script type="module" src="js/interface.js"></script>
+  </body>
+</html>
