@@ -93,8 +93,8 @@ class Database {
 
     for (const d of dialogosData) {
       await this.connection.query(
-        `INSERT IGNORE INTO dialogo (id_dialogo, nome, fala) VALUES (?, ?, ?)`,
-        [d.id_dialogo, d.nome, d.fala]
+        `INSERT IGNORE INTO dialogo (id_dialogo, fala) VALUES (?, ?)`,
+        [d.id_dialogo, d.fala]
       );
     }
     console.log("Diálogos iniciais inseridos/verificados.");

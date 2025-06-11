@@ -18,5 +18,13 @@
     "mysql2": "^3.14.1",
     "nodemon": "^3.1.10"
   },
-  "devDependencies": {}
+  "devDependencies": {},
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/soneylegal/dbprojetointerface.git"
+  },
+  "bugs": {
+    "url": "https://github.com/soneylegal/dbprojetointerface/issues"
+  },
+  "homepage": "https://github.com/soneylegal/dbprojetointerface#readme"
 }
